@@ -110,38 +110,77 @@ const getTemplate = async (inputs) => {
   return template
 }
 
-const resolveTemplate = (template) => {
-  const regex = /\${(\w*:?[\w\d.-]+)}/g
-  let variableResolved = false
-  const resolvedTemplate = traverse(template).forEach(function(value) {
-    const matches = typeof value === 'string' ? value.match(regex) : null
-    if (matches) {
-      let newValue = value
-      for (const match of matches) {
-        const referencedPropertyPath = match.substring(2, match.length - 1).split('.')
-        const referencedTopLevelProperty = referencedPropertyPath[0]
+const reference = (match) => {
+  const propertyPath = match.substring(2, match.length - 1).split('.')
+  const topLevelProperty = propertyPath[0]
+  return {
+    propertyPath,
+    topLevelProperty
+  }
+}
 
-        if (!template[referencedTopLevelProperty]) {
+const getMatches = (regex, value) => {
+  return typeof value === 'string' ? value.match(regex) : null
+}
+
+const resolveEnvironmentalVariable = (value, variableResolved) => {
+  const matches = getMatches(/\${env\:(\w*:?[\w\d.-]+)}/g, value)
+  if (matches) {
+    let newValue
+    for (const match of matches) {
+      const { topLevelProperty } = reference(match)
+      newValue = process.env[topLevelProperty.substring(4)]
+    }
+    if (newValue) {
+      variableResolved = true
+      return newValue
+    } else {
+      throw new Error(`invalid reference ${matches}`)
+    }
+  }
+}
+
+const resolveComponent = (template, value, variableResolved) => {
+  const matches = getMatches(/\${(\w*:?[\w\d.-]+)}/g, value)
+  if (matches) {
+    let newValue = value
+    for (const match of matches) {
+      const { propertyPath, topLevelProperty } = reference(match)
+
+      if (!template[topLevelProperty]) {
+        throw Error(`invalid reference ${match}`)
+      }
+
+      if (!template[topLevelProperty].component) {
+        variableResolved = true
+        const referencedPropertyValue = path(propertyPath, template)
+
+        if (referencedPropertyValue === undefined) {
           throw Error(`invalid reference ${match}`)
         }
 
-        if (!template[referencedTopLevelProperty].component) {
-          variableResolved = true
-          const referencedPropertyValue = path(referencedPropertyPath, template)
-
-          if (referencedPropertyValue === undefined) {
-            throw Error(`invalid reference ${match}`)
-          }
-
-          if (match === value) {
-            newValue = referencedPropertyValue
-          } else if (typeof referencedPropertyValue === 'string') {
-            newValue = newValue.replace(match, referencedPropertyValue)
-          } else {
-            throw Error(`the referenced substring is not a string`)
-          }
+        if (match === value) {
+          newValue = referencedPropertyValue
+        } else if (typeof referencedPropertyValue === 'string') {
+          newValue = newValue.replace(match, referencedPropertyValue)
+        } else {
+          throw Error(`the referenced substring is not a string`)
         }
       }
+    }
+    return newValue
+  }
+}
+
+const resolveTemplate = (template) => {
+  let variableResolved = false
+  let newValue
+  const resolvedTemplate = traverse(template).forEach(function(value) {
+    newValue = resolveEnvironmentalVariable(value, variableResolved)
+    if (!newValue) {
+      newValue = resolveComponent(template, value, variableResolved)
+    }
+    if (newValue) {
       this.update(newValue)
     }
   })
