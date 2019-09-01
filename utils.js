@@ -124,7 +124,8 @@ const getMatches = (regex, value) => {
 }
 
 const resolveEnvironmentalVariable = (value, variableResolved) => {
-  const matches = getMatches(/\${env\:(\w*:?[\w\d.-]+)}/g, value)
+  const regex = /\${env\:(\w*:?[\w\d.-]+)}/g
+  const matches = getMatches(regex, value)
   if (matches) {
     let newValue
     for (const match of matches) {
@@ -132,6 +133,9 @@ const resolveEnvironmentalVariable = (value, variableResolved) => {
       newValue = process.env[topLevelProperty.substring(4)]
     }
     if (newValue) {
+      if (getMatches(regex, newValue)) {
+        return resolveComponent(template, newValue, variableResolved)
+      }
       variableResolved = true
       return newValue
     } else {
@@ -141,7 +145,8 @@ const resolveEnvironmentalVariable = (value, variableResolved) => {
 }
 
 const resolveComponent = (template, value, variableResolved) => {
-  const matches = getMatches(/\${(\w*:?[\w\d.-]+)}/g, value)
+  const regex = /\${(\w*:?[\w\d.-]+)}/g
+  const matches = getMatches(regex, value)
   if (matches) {
     let newValue = value
     for (const match of matches) {
@@ -152,7 +157,6 @@ const resolveComponent = (template, value, variableResolved) => {
       }
 
       if (!template[topLevelProperty].component) {
-        variableResolved = true
         const referencedPropertyValue = path(propertyPath, template)
 
         if (referencedPropertyValue === undefined) {
@@ -167,6 +171,10 @@ const resolveComponent = (template, value, variableResolved) => {
           throw Error(`the referenced substring is not a string`)
         }
       }
+      if (getMatches(regex, newValue)) {
+        return resolveComponent(template, newValue, variableResolved)
+      }
+      variableResolved = true
     }
     return newValue
   }
